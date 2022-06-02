@@ -1,47 +1,66 @@
 import torch
 
 import pandas as pd
+import os
 
-from imagen_pytorch.download import load_checkpoint
-from imagen_pytorch.model_creation import (
-    create_model_and_diffusion,
-    model_and_diffusion_defaults,
-)
-from imagen_pytorch.resample import create_named_schedule_sampler
+from bt_imagen.resample import create_named_schedule_sampler
 
-from imagen_pytorch import dist_util, logger
-from dataset import get_loader
-from train_utils import TrainLoop
+from bt_imagen import dist_util, logger
+from bt_imagen.dataset import get_loader
+from bt_imagen.utils import TrainLoop
+
+from imagen_pytorch import Unet, Imagen, ImagenTrainer
 
 import json
 
-has_cuda = th.cuda.is_available()
-device = th.device('cpu' if not has_cuda else 'cuda')
+has_cuda = torch.cuda.is_available()
+device = torch.device('cpu' if not has_cuda else 'cuda')
 
 
 imagen_save_path = "/storage/imagen/imagen.pt"
 
-coco_image_path = "/datasets/coco/train2014/"
-coco_annotation_path = "/datasets/coco/annotations/captions_train2014.json"
-
-options = model_and_diffusion_defaults()
-options['use_fp16'] = False
-options['t5_name'] = 't5-large'
-model, diffusion = create_model_and_diffusion(**options)
-
-model.eval()
-#if has_cuda:
-#    model.convert_to_fp16()
-model.to(device)
-#model.load_state_dict(load_checkpoint('base', device), strict=False)
-# model.load_state_dict(th.load('/content/Imagen-pytorch/imagen-pytorch.pt'))
+coco_annotation_path = "/storage/coco/annotations/captions_train2014.json"
+coco_image_path = "/storage/coco/train2014"
 
 
+def create_model():
+    unet1 = Unet(
+    dim = 32,
+    cond_dim = 512,
+    dim_mults = (1, 2, 4, 8),
+    num_resnet_blocks = 3,
+    layer_attns = (False, True, True, True),
+    )
 
-if os.path.exists(imagen_save_path):
-    model.load_state_dict(torch.load(imagen_save_path))
+    unet2 = Unet(
+        dim = 32,
+        cond_dim = 512,
+        dim_mults = (1, 2, 4, 8),
+        num_resnet_blocks = (2, 4, 8, 8),
+        layer_attns = (False, False, False, True),
+        layer_cross_attns = (False, False, False, True)
+    )
 
-print('total base parameters', sum(x.numel() for x in model.parameters()))
+    # imagen, which contains the unets above (base unet and super resoluting ones)
+
+    imagen = Imagen(
+        unets = (unet1, unet2),
+        text_encoder_name = 't5-large',
+        image_sizes = (64, 256),
+        beta_schedules = ('cosine', 'linear'),
+        timesteps = 1000,
+        cond_drop_prob = 0.5
+    ).cuda()
+
+    # wrap imagen with the trainer class
+
+    trainer = ImagenTrainer(imagen)
+
+    if os.path.exists(imagen_save_path):
+        trainer.load(imagen_save_path)
+        logger.log("loaded imagen from {}".format(imagen_save_path))
+
+    return trainer
 
 
 def get_images_id(images_list):
@@ -85,32 +104,18 @@ def configure_logger():
     logger.log("creating model and diffusion...")
     
 
-def train(data):
+def train(trainer, data):
     
-    schedule_sampler = create_named_schedule_sampler('uniform', diffusion)
-    TrainLoop(
-            model=model,
-            diffusion=diffusion,
-            data=data,
-            batch_size=4,
-            microbatch=-1,
-            lr=1e-4,
-            ema_rate="0.9999",
-            log_interval=100,
-            save_interval=10000,
-            resume_checkpoint=False,
-            use_fp16=False,
-            fp16_scale_growth=1e-3,
-            schedule_sampler=schedule_sampler,
-            weight_decay=0.01,
-            lr_anneal_steps=0,
-            save_dir=imagen_save_path,
-    ).run_loop()
+    for batch, cond in data:
+
+        print(batch)
+        print(cond)
 
 
     
 if __name__ == '__main__':
     configure_logger()
+    trainer = create_model()
     data = create_dataset()
     train(data)
     
