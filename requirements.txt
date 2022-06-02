@@ -1,0 +1,11 @@
+Pillow
+attrs
+filelock
+requests
+tqdm
+ftfy
+regex
+numpy
+blobfile
+accelerate
+transformers
