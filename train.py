@@ -88,8 +88,8 @@ def create_dataset():
                 resolution=64,
                    image_dir=coco_image_path,
                    df=df,
-                   tokenizer_name='t5-large', 
-                   max_len=1024,
+                   tokenizer_name='google/t5-v1_1-base', 
+                   max_len=256,
                    zero_text_prob=0.1,
                    shuffle=True)
     

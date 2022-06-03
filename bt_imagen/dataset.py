@@ -67,7 +67,7 @@ class ImageDataset(Dataset):
         #     return_tensors="pt")
 
         text_embeds, text_masks = t5_encode_text(text, name = 'google/t5-v1_1-base')
-        text_embeds, text_masks = map(lambda t: t.to(self.device), (text_embeds, text_masks))
+        # text_embeds, text_masks = map(lambda t: t.to(self.device), (text_embeds, text_masks))
         out_dict["tokens"] = text_embeds
         out_dict["mask"] = text_masks
         return np.transpose(arr, [2, 0, 1]), out_dict
