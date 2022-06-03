@@ -5,9 +5,8 @@ import os
 
 from bt_imagen.resample import create_named_schedule_sampler
 
-from bt_imagen import dist_util, logger
+from bt_imagen import logger
 from bt_imagen.dataset import get_loader
-from bt_imagen.utils import TrainLoop
 
 from imagen_pytorch import Unet, Imagen, ImagenTrainer
 
@@ -19,8 +18,8 @@ device = torch.device('cpu' if not has_cuda else 'cuda')
 
 imagen_save_path = "/storage/imagen/imagen.pt"
 
-coco_annotation_path = "/storage/coco/annotations/captions_train2014.json"
-coco_image_path = "/storage/coco/train2014"
+coco_annotation_path = "/datasets/coco/annotations/captions_train2014.json"
+coco_image_path = "/datasets/coco/train2014"
 
 
 def create_model():
@@ -86,11 +85,11 @@ def create_dataset():
     df.columns = ['path', 'text']
     
     data = get_loader(batch_size=4,
-                  resolution=64,
+                resolution=64,
                    image_dir=coco_image_path,
                    df=df,
                    tokenizer_name='t5-large', 
-                   max_len=128,
+                   max_len=1024,
                    zero_text_prob=0.1,
                    shuffle=True)
     
@@ -98,7 +97,7 @@ def create_dataset():
 
 
 def configure_logger():
-    dist_util.setup_dist()
+    # dist_util.setup_dist()
     logger.configure()
 
     logger.log("creating model and diffusion...")
@@ -108,8 +107,17 @@ def train(trainer, data):
     
     for batch, cond in data:
 
-        print(batch)
-        print(cond)
+        for i in (1, 2):
+            loss = trainer(
+                batch,
+                text_embeds = cond['tokens'],
+                text_masks = cond['mask'],
+                unet_number = i,
+                max_batch_size = 4        # auto divide the batch of 64 up into batch size of 4 and accumulate gradients, so it all fits in memory
+            )
+
+            trainer.update(unet_number = i)
+            print(loss)
 
 
     
@@ -117,6 +125,6 @@ if __name__ == '__main__':
     configure_logger()
     trainer = create_model()
     data = create_dataset()
-    train(data)
+    train(trainer, data)
     
     

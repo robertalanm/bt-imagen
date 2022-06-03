@@ -7,8 +7,8 @@ import torch
 import json
 import os
 from transformers import AutoTokenizer
+from imagen_pytorch.t5 import t5_encode_text
 
-        
         
 def get_loader(batch_size, resolution, image_dir, df, zero_text_prob=0.1, tokenizer_name='t5-large', max_len=128, shuffle=True,):
     dataset = ImageDataset(resolution, image_dir, df, tokenizer_name, max_len, zero_text_prob)
@@ -26,6 +26,7 @@ class ImageDataset(Dataset):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.max_len = max_len
         self.zero_text_prob = zero_text_prob
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __len__(self):
         return len(self.df)
@@ -56,15 +57,17 @@ class ImageDataset(Dataset):
         arr = arr.astype(np.float32) / 127.5 - 1
         if np.random.binomial(1, self.zero_text_prob):
             text = ''
-        text_encoding = self.tokenizer(
-            text,
-            max_length=self.max_len,
-            padding="max_length",
-            truncation=True,
-            return_attention_mask=True,
-            add_special_tokens=True,
-            return_tensors="pt")
+        # text_encoding = self.tokenizer(
+        #     text,
+        #     max_length=self.max_len,
+        #     padding="max_length",
+        #     truncation=True,
+        #     return_attention_mask=True,
+        #     add_special_tokens=True,
+        #     return_tensors="pt")
 
-        out_dict["tokens"] = text_encoding['input_ids'][0]
-        out_dict["mask"] = text_encoding['attention_mask'][0]
+        text_embeds, text_masks = t5_encode_text(text, name = 'google/t5-v1_1-base')
+        text_embeds, text_masks = map(lambda t: t.to(self.device), (text_embeds, text_masks))
+        out_dict["tokens"] = text_embeds
+        out_dict["mask"] = text_masks
         return np.transpose(arr, [2, 0, 1]), out_dict
